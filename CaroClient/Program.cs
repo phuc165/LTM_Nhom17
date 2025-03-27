@@ -84,6 +84,7 @@ namespace CaroClient
                 Location = new Point(280, 19),
                 Size = new Size(80, 23)
             };
+            connectButton.Click += Connect_Click;
 
             statusLabel = new Label
             {
@@ -94,7 +95,7 @@ namespace CaroClient
 
             roomLabel = new Label
             {
-                Text = "Room: None",
+                Text = "Room: none",
                 Location = new Point(20, 70),
                 Size = new Size(200, 20)
             };
@@ -120,6 +121,7 @@ namespace CaroClient
                 Location = new Point(Common.BOARD_SIZE * Common.CELL_SIZE + 50, 510),
                 Size = new Size(170, 20)
             };
+            chatInput.KeyPress += (s, e) => { if (e.KeyChar == (char)13) SendChatMessage(); };
 
             sendButton = new Button
             {
@@ -127,6 +129,7 @@ namespace CaroClient
                 Location = new Point(Common.BOARD_SIZE * Common.CELL_SIZE + 230, 509),
                 Size = new Size(70, 23)
             };
+            sendButton.Click += (s, e) => SendChatMessage();
 
             this.Controls.Add(serverLabel);
             this.Controls.Add(serverInput);
@@ -138,9 +141,252 @@ namespace CaroClient
             this.Controls.Add(chatInput);
             this.Controls.Add(sendButton);
 
+            this.FormClosing += (s, e) => DisconnectFromServer();
         }
 
+        private void Connect_Click(object sender, EventArgs e)
+        {
+            if (client == null)
+            {
+                ConnectToServer();
+            }
+            else
+            {
+                DisconnectFromServer();
+            }
+        }
 
+        private void ConnectToServer()
+        {
+            try
+            {
+                string serverAddress = serverInput.Text.Trim();
+                client = new TcpClient();
+                client.Connect(serverAddress, 8888);
+
+                stream = client.GetStream();
+
+                listenThread = new Thread(ListenForServerMessages);
+                listenThread.IsBackground = true;
+                listenThread.Start();
+
+                statusLabel.Text = "Connected to server. Waiting for room assignment...";
+                connectButton.Text = "Disconnect";
+
+                chatInput.Enabled = true;
+                sendButton.Enabled = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error connecting to server: {ex.Message}", "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void DisconnectFromServer()
+        {
+            if (client != null)
+            {
+                try
+                {
+                    if (listenThread != null && listenThread.IsAlive)
+                    {
+                        listenThread.Abort();
+                    }
+
+                    if (stream != null)
+                    {
+                        stream.Close();
+                    }
+
+                    client.Close();
+                }
+                catch { }
+
+                client = null;
+                stream = null;
+
+                gameStatus = Common.GameStatus.Waiting;
+                playerRole = Common.CellState.Empty;
+                isMyTurn = false;
+                roomId = -1;
+
+                statusLabel.Text = "Disconnected from server";
+                connectButton.Text = "Connect";
+                roomLabel.Text = "Room: None";
+
+                chatInput.Enabled = false;
+                sendButton.Enabled = false;
+
+                InitializeBoard();
+                boardPanel.Invalidate();
+            }
+        }
+
+        private void ListenForServerMessages()
+        {
+            byte[] buffer = new byte[1024];
+
+            try
+            {
+                int bytesRead;
+
+                while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                    string command, data;
+                    Common.ParseMessage(message, out command, out data);
+
+                    if (command == "ROLE")
+                    {
+                        string[] parts = data.Split(',');
+                        string role = parts[0];
+                        roomId = int.Parse(parts[1]);
+
+                        playerRole = (role == "X") ? Common.CellState.X : Common.CellState.O;
+                        UpdateRoomLabel($"Room: {roomId}");
+                        UpdateStatus($"You are playing as {role} in Room {roomId}. Waiting for another player...");
+                    }
+                    else if (command == "START")
+                    {
+                        gameStatus = Common.GameStatus.Playing;
+                        isMyTurn = (playerRole == Common.CellState.X);
+                        UpdateStatus(isMyTurn ? "Game started. Your turn!" : "Game started. Opponent's turn...");
+                    }
+                    else if (command == "MOVE")
+                    {
+                        string[] parts = data.Split(',');
+                        int row = int.Parse(parts[0]);
+                        int col = int.Parse(parts[1]);
+                        int playerIndex = int.Parse(parts[2]);
+
+                        board[row, col] = (playerIndex == 0) ? Common.CellState.X : Common.CellState.O;
+                        isMyTurn = (playerIndex == 0 && playerRole == Common.CellState.O) ||
+                                  (playerIndex == 1 && playerRole == Common.CellState.X);
+
+                        UpdateStatus(isMyTurn ? "Your turn!" : "Opponent's turn...");
+                        UpdateBoard();
+                    }
+                    else if (command == "GAMEOVER")
+                    {
+                        gameStatus = Common.GameStatus.GameOver;
+                        UpdateStatus($"Game over: {data}");
+
+                        if (MessageBox.Show($"Game over: {data}\nDo you want to play again?", "Game Over",
+                                          MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        {
+                            SendMessage(Common.FormatMessage("RESTART", ""));
+                        }
+                    }
+                    else if (command == "RESTART")
+                    {
+                        InitializeBoard();
+                        gameStatus = Common.GameStatus.Playing;
+                        isMyTurn = (playerRole == Common.CellState.X);
+                        UpdateStatus(isMyTurn ? "Game restarted. Your turn!" : "Game restarted. Opponent's turn...");
+                        UpdateBoard();
+                    }
+                    else if (command == "CHAT")
+                    {
+                        AddChatMessage(data);
+                    }
+                    else if (command == "DISCONNECT")
+                    {
+                        gameStatus = Common.GameStatus.Waiting;
+                        UpdateStatus($"{data}. Waiting for reconnection...");
+                    }
+                }
+            }
+            catch (ThreadAbortException)
+            {
+                // Thread was aborted
+            }
+            catch (Exception)
+            {
+                if (this.IsHandleCreated)
+                {
+                    this.Invoke(new Action(() =>
+                    {
+                        if (client != null)
+                        {
+                            DisconnectFromServer();
+                            MessageBox.Show("Connection to server lost.", "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }));
+                }
+            }
+        }
+
+        private void SendChatMessage()
+        {
+            string message = chatInput.Text.Trim();
+            if (!string.IsNullOrEmpty(message) && client != null && stream != null)
+            {
+                SendMessage(Common.FormatMessage("CHAT", message));
+                chatInput.Text = "";
+            }
+        }
+
+        private void SendMessage(string message)
+        {
+            try
+            {
+                byte[] data = Encoding.ASCII.GetBytes(message);
+                stream.Write(data, 0, data.Length);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error sending message: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void AddChatMessage(string message)
+        {
+            if (chatBox.InvokeRequired)
+            {
+                chatBox.Invoke(new Action<string>(AddChatMessage), message);
+            }
+            else
+            {
+                chatBox.Items.Add(message);
+                chatBox.SelectedIndex = chatBox.Items.Count - 1;
+            }
+        }
+
+        private void UpdateStatus(string status)
+        {
+            if (statusLabel.InvokeRequired)
+            {
+                statusLabel.Invoke(new Action<string>(UpdateStatus), status);
+            }
+            else
+            {
+                statusLabel.Text = status;
+            }
+        }
+
+        private void UpdateRoomLabel(string text)
+        {
+            if (roomLabel.InvokeRequired)
+            {
+                roomLabel.Invoke(new Action<string>(UpdateRoomLabel), text);
+            }
+            else
+            {
+                roomLabel.Text = text;
+            }
+        }
+
+        private void UpdateBoard()
+        {
+            if (boardPanel.InvokeRequired)
+            {
+                boardPanel.Invoke(new Action(UpdateBoard));
+            }
+            else
+            {
+                boardPanel.Invalidate();
+            }
+        }
 
         private void InitializeBoard()
         {
