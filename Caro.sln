@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaroServer", "CaroServer\CaroServer.csproj", "{863998B2-E61F-4D99-89B5-B4BFD062B6F7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaroClient", "CaroClient\CaroClient.csproj", "{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,8 +29,23 @@ Global
 		{863998B2-E61F-4D99-89B5-B4BFD062B6F7}.Release|x64.Build.0 = Release|Any CPU
 		{863998B2-E61F-4D99-89B5-B4BFD062B6F7}.Release|x86.ActiveCfg = Release|Any CPU
 		{863998B2-E61F-4D99-89B5-B4BFD062B6F7}.Release|x86.Build.0 = Release|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Debug|x64.Build.0 = Debug|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Debug|x86.Build.0 = Debug|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Release|x64.ActiveCfg = Release|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Release|x64.Build.0 = Release|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Release|x86.ActiveCfg = Release|Any CPU
+		{FD7964B1-9109-4A08-B0CB-9CD3E3ECABAA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F4B38970-759F-41B4-BDF4-6190FBAAD380}
 	EndGlobalSection
 EndGlobal
