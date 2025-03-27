@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace CaRoServer
+namespace CaroServer
 {
     static class Program
     {

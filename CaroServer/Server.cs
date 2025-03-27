@@ -5,7 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
-namespace CaRoServer
+namespace CaroServer
 {
     public class Common
     {
@@ -152,7 +152,15 @@ namespace CaRoServer
             Thread clientThread = new Thread(() => HandleClient(client, availableRoom, playerIndex));
             clientThread.IsBackground = true;
             clientThread.Start();
+
+            NetworkStream stream = client.GetStream();
+            string role = (playerIndex == 0) ? "X" : "O";
+            byte[] roleMsg = Encoding.ASCII.GetBytes(Common.FormatMessage("ROLE", $"{role},{availableRoom.RoomId}"));
+            stream.Write(roleMsg, 0, roleMsg.Length);
+
+            
         }
+
 
         private void HandleClient(TcpClient client, Room room, int playerIndex)
         {
@@ -166,19 +174,27 @@ namespace CaRoServer
                 while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                    Common.ParseMessage(message, out string command, out string data);
+                    string command, data;
+                    Common.ParseMessage(message, out command, out data);
 
-                    if (command == "CHAT")
-                    {
-                        BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data}"));
-                    }
+                    
                 }
             }
             catch (Exception)
             {
-                room.Players.Remove(client);
-                updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected.");
-                try { client.Close(); } catch { }
+                if (room.Players.Contains(client))
+                {
+                    room.Players.Remove(client);
+                    updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected. {room.Players.Count}/2 players.");
+                    BroadcastToRoom(room, Common.FormatMessage("DISCONNECT", $"Player {playerIndex + 1} disconnected"));
+
+                    if (room.GameStatus == Common.GameStatus.Playing)
+                    {
+                        room.GameStatus = Common.GameStatus.Waiting;
+                    }
+
+                    try { client.Close(); } catch { }
+                }
             }
         }
 
