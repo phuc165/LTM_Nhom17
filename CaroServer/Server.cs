@@ -74,6 +74,10 @@ namespace CaRoServer
                 server.Start();
 
                 updateStatusCallback?.Invoke("Server Status: Running on port 8888");
+
+                Thread listenerThread = new Thread(ListenForClients);
+                listenerThread.IsBackground = true;
+                listenerThread.Start();
             }
             catch (Exception ex)
             {
@@ -98,6 +102,97 @@ namespace CaRoServer
 
                 rooms.Clear();
                 updateStatusCallback?.Invoke("Server Status: Not Running");
+            }
+        }
+
+        private void ListenForClients()
+        {
+            try
+            {
+                while (true)
+                {
+                    TcpClient client = server.AcceptTcpClient();
+                    AssignClientToRoom(client);
+                }
+            }
+            catch (SocketException)
+            {
+                // Server stopped
+            }
+            catch (Exception ex)
+            {
+                updateStatusCallback?.Invoke($"Server error: {ex.Message}");
+            }
+        }
+
+        private void AssignClientToRoom(TcpClient client)
+        {
+            Room availableRoom = null;
+
+            foreach (var room in rooms)
+            {
+                if (room.Players.Count < 2 && room.GameStatus == Common.GameStatus.Waiting)
+                {
+                    availableRoom = room;
+                    break;
+                }
+            }
+
+            if (availableRoom == null)
+            {
+                availableRoom = new Room(rooms.Count);
+                rooms.Add(availableRoom);
+            }
+
+            int playerIndex = availableRoom.Players.Count;
+            availableRoom.Players.Add(client);
+
+            updateStatusCallback?.Invoke($"Player joined Room {availableRoom.RoomId}. Players: {availableRoom.Players.Count}/2");
+
+            Thread clientThread = new Thread(() => HandleClient(client, availableRoom, playerIndex));
+            clientThread.IsBackground = true;
+            clientThread.Start();
+        }
+
+        private void HandleClient(TcpClient client, Room room, int playerIndex)
+        {
+            NetworkStream stream = client.GetStream();
+            byte[] buffer = new byte[1024];
+
+            try
+            {
+                int bytesRead;
+
+                while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                    Common.ParseMessage(message, out string command, out string data);
+
+                    if (command == "CHAT")
+                    {
+                        BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data}"));
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                room.Players.Remove(client);
+                updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected.");
+                try { client.Close(); } catch { }
+            }
+        }
+
+        private void BroadcastToRoom(Room room, string message)
+        {
+            byte[] data = Encoding.ASCII.GetBytes(message);
+            foreach (var client in room.Players)
+            {
+                try
+                {
+                    NetworkStream stream = client.GetStream();
+                    stream.Write(data, 0, data.Length);
+                }
+                catch { }
             }
         }
     }
