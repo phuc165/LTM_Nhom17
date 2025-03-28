@@ -211,5 +211,51 @@ namespace CaroServer
                 catch { }
             }
         }
+
+        private bool CheckWin(Room room, int row, int col)
+        {
+            Common.CellState player = room.Board[row, col];
+            int count;
+
+            // Horizontal
+            count = 0;
+            for (int c = Math.Max(0, col - 4); c <= Math.Min(Common.BOARD_SIZE - 1, col + 4); c++)
+            {
+                if (room.Board[row, c] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
+            }
+
+            // Vertical
+            count = 0;
+            for (int r = Math.Max(0, row - 4); r <= Math.Min(Common.BOARD_SIZE - 1, row + 4); r++)
+            {
+                if (room.Board[r, col] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
+            }
+
+            // Diagonal (top-left to bottom-right)
+            count = 0;
+            for (int i = -4; i <= 4; i++)
+            {
+                int r = row + i;
+                int c = col + i;
+                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE)
+                {
+                    if (room.Board[r, c] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
+                }
+            }
+
+            // Diagonal (top-right to bottom-left)
+            count = 0;
+            for (int i = -4; i <= 4; i++)
+            {
+                int r = row + i;
+                int c = col - i;
+                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE)
+                {
+                    if (room.Board[r, c] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
+                }
+            }
+
+            return false;
+        }
     }
 }
