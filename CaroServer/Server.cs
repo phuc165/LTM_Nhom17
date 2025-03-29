@@ -60,6 +60,7 @@ namespace CaroServer
         private TcpListener server;
         private List<Room> rooms = new List<Room>();
         private Action<string> updateStatusCallback;
+        private Label statusLabel;
 
         public Server(Action<string> updateStatusCallback)
         {
@@ -257,5 +258,29 @@ namespace CaroServer
 
             return false;
         }
+
+        private void UpdateStatus(string status)
+        {
+            if (statusLabel.InvokeRequired)
+            {
+                statusLabel.Invoke(new Action<string>(UpdateStatus), status);
+            }
+            else
+            {
+                statusLabel.Text = status;
+            }
+        }
+        private bool IsBoardFull(Room room)
+        {
+            for (int i = 0; i < Common.BOARD_SIZE; i++)
+            {
+                for (int j = 0; j < Common.BOARD_SIZE; j++)
+                {
+                    if (room.Board[i, j] == Common.CellState.Empty) return false;
+                }
+            }
+            return true;
+        }
     }
+   
 }
