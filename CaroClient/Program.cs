@@ -95,7 +95,7 @@ namespace CaroClient
 
             roomLabel = new Label
             {
-                Text = "Room: none",
+                Text = "Room: None",
                 Location = new Point(20, 70),
                 Size = new Size(200, 20)
             };
@@ -107,6 +107,8 @@ namespace CaroClient
                 Size = new Size(Common.BOARD_SIZE * Common.CELL_SIZE, Common.BOARD_SIZE * Common.CELL_SIZE),
                 BorderStyle = BorderStyle.FixedSingle
             };
+            boardPanel.Paint += BoardPanel_Paint;
+            boardPanel.MouseClick += BoardPanel_MouseClick;
 
             // Chat controls
             chatBox = new ListBox
@@ -312,6 +314,51 @@ namespace CaroClient
                             MessageBox.Show("Connection to server lost.", "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }));
+                }
+            }
+        }
+
+        private void BoardPanel_Paint(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+
+            for (int i = 0; i <= Common.BOARD_SIZE; i++)
+            {
+                g.DrawLine(Pens.Black, 0, i * Common.CELL_SIZE, Common.BOARD_SIZE * Common.CELL_SIZE, i * Common.CELL_SIZE);
+                g.DrawLine(Pens.Black, i * Common.CELL_SIZE, 0, i * Common.CELL_SIZE, Common.BOARD_SIZE * Common.CELL_SIZE);
+            }
+
+            for (int row = 0; row < Common.BOARD_SIZE; row++)
+            {
+                for (int col = 0; col < Common.BOARD_SIZE; col++)
+                {
+                    int x = col * Common.CELL_SIZE;
+                    int y = row * Common.CELL_SIZE;
+
+                    if (board[row, col] == Common.CellState.X)
+                    {
+                        g.DrawLine(new Pen(Color.Blue, 2), x + 5, y + 5, x + Common.CELL_SIZE - 5, y + Common.CELL_SIZE - 5);
+                        g.DrawLine(new Pen(Color.Blue, 2), x + Common.CELL_SIZE - 5, y + 5, x + 5, y + Common.CELL_SIZE - 5);
+                    }
+                    else if (board[row, col] == Common.CellState.O)
+                    {
+                        g.DrawEllipse(new Pen(Color.Red, 2), x + 5, y + 5, Common.CELL_SIZE - 10, Common.CELL_SIZE - 10);
+                    }
+                }
+            }
+        }
+
+        private void BoardPanel_MouseClick(object sender, MouseEventArgs e)
+        {
+            if (gameStatus == Common.GameStatus.Playing && isMyTurn)
+            {
+                int col = e.X / Common.CELL_SIZE;
+                int row = e.Y / Common.CELL_SIZE;
+
+                if (row >= 0 && row < Common.BOARD_SIZE && col >= 0 && col < Common.BOARD_SIZE &&
+                    board[row, col] == Common.CellState.Empty)
+                {
+                    SendMessage(Common.FormatMessage("MOVE", $"{row},{col}"));
                 }
             }
         }
