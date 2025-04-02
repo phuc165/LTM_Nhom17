@@ -208,6 +208,18 @@ namespace CaroServer
                                 UpdateStatus($"Room {room.RoomId}: Player {((room.CurrentPlayerIndex == 0) ? "X" : "O")}'s turn");
                             }
                         }
+                        else if (command == "CHAT")
+                        {
+                            BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data}"));
+                        }
+                        else if (command == "RESTART" && room.GameStatus == Common.GameStatus.GameOver)
+                        {
+                            room.InitializeBoard();
+                            room.GameStatus = Common.GameStatus.Playing;
+                            room.CurrentPlayerIndex = 0;
+                            BroadcastToRoom(room, Common.FormatMessage("RESTART", ""));
+                            UpdateStatus($"Room {room.RoomId}: Game restarted. Player X's turn.");
+                        }
                         // else other  command
                     }
 
