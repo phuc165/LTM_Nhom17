@@ -159,7 +159,12 @@ namespace CaroServer
             byte[] roleMsg = Encoding.ASCII.GetBytes(Common.FormatMessage("ROLE", $"{role},{availableRoom.RoomId}"));
             stream.Write(roleMsg, 0, roleMsg.Length);
 
-            
+            if (availableRoom.Players.Count == 2)
+            {
+                availableRoom.GameStatus = Common.GameStatus.Playing;
+                BroadcastToRoom(availableRoom, Common.FormatMessage("START", ""));
+                updateStatusCallback?.Invoke($"Room {availableRoom.RoomId}: Game started. Player X's turn.");
+            }
         }
 
 
