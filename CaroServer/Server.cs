@@ -60,7 +60,7 @@ namespace CaroServer
         private TcpListener server;
         private List<Room> rooms = new List<Room>();
         private Action<string> updateStatusCallback;
-        private Label statusLabel;
+       
 
         public Server(Action<string> updateStatusCallback)
         {
@@ -177,7 +177,7 @@ namespace CaroServer
                     string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
                     string command, data;
                     Common.ParseMessage(message, out command, out data);
-                    //MOVE command
+
                     if (command == "MOVE" && room.GameStatus == Common.GameStatus.Playing && room.CurrentPlayerIndex == playerIndex)
                     {
                         string[] coords = data.Split(',');
@@ -194,35 +194,33 @@ namespace CaroServer
                             {
                                 room.GameStatus = Common.GameStatus.GameOver;
                                 BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", $"Player {((playerIndex == 0) ? "X" : "O")} wins!"));
-                                UpdateStatus($"Room {room.RoomId}: Player {((playerIndex == 0) ? "X" : "O")} wins!");
+                                updateStatusCallback?.Invoke($"Room {room.RoomId}: Player {((playerIndex == 0) ? "X" : "O")} wins!");
                             }
                             else if (IsBoardFull(room))
                             {
                                 room.GameStatus = Common.GameStatus.GameOver;
                                 BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", "Draw!"));
-                                UpdateStatus($"Room {room.RoomId}: Draw!");
+                                updateStatusCallback?.Invoke($"Room {room.RoomId}: Draw!");
                             }
                             else
                             {
                                 room.CurrentPlayerIndex = 1 - room.CurrentPlayerIndex;
-                                UpdateStatus($"Room {room.RoomId}: Player {((room.CurrentPlayerIndex == 0) ? "X" : "O")}'s turn");
+                                updateStatusCallback?.Invoke($"Room {room.RoomId}: Player {((room.CurrentPlayerIndex == 0) ? "X" : "O")}'s turn");
                             }
                         }
-                        else if (command == "CHAT")
-                        {
-                            BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data}"));
-                        }
-                        else if (command == "RESTART" && room.GameStatus == Common.GameStatus.GameOver)
-                        {
-                            room.InitializeBoard();
-                            room.GameStatus = Common.GameStatus.Playing;
-                            room.CurrentPlayerIndex = 0;
-                            BroadcastToRoom(room, Common.FormatMessage("RESTART", ""));
-                            UpdateStatus($"Room {room.RoomId}: Game restarted. Player X's turn.");
-                        }
-                        // else other  command
                     }
-
+                    else if (command == "CHAT")
+                    {
+                        BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data}"));
+                    }
+                    else if (command == "RESTART" && room.GameStatus == Common.GameStatus.GameOver)
+                    {
+                        room.InitializeBoard();
+                        room.GameStatus = Common.GameStatus.Playing;
+                        room.CurrentPlayerIndex = 0;
+                        BroadcastToRoom(room, Common.FormatMessage("RESTART", ""));
+                        updateStatusCallback?.Invoke($"Room {room.RoomId}: Game restarted. Player X's turn.");
+                    }
                 }
             }
             catch (Exception)
@@ -242,6 +240,7 @@ namespace CaroServer
                 }
             }
         }
+
 
         private void BroadcastToRoom(Room room, string message)
         {
@@ -303,17 +302,7 @@ namespace CaroServer
             return false;
         }
 
-        private void UpdateStatus(string status)
-        {
-            if (statusLabel.InvokeRequired)
-            {
-                statusLabel.Invoke(new Action<string>(UpdateStatus), status);
-            }
-            else
-            {
-                statusLabel.Text = status;
-            }
-        }
+    
         private bool IsBoardFull(Room room)
         {
             for (int i = 0; i < Common.BOARD_SIZE; i++)
