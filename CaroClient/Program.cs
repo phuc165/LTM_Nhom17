@@ -60,19 +60,26 @@ namespace CaroClient
 
         private void InitializeComponents()
         {
+            // Thiết lập tiêu đề cửa sổ
             this.Text = "Caro Game Client";
+            // Kích thước form là 800x700
             this.Size = new Size(800, 700);
+            // Đặt kiểu viền form là cố định (không thay đổi kích thước)
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
+            // Không cho phép phóng to cửa sổ
             this.MaximizeBox = false;
 
-            // Server connection controls
+            // --------- Thiết lập điều khiển kết nối đến server ---------
+
+            // Nhãn hiển thị "Server Address:"
             Label serverLabel = new Label
             {
                 Text = "Server Address:",
-                Location = new Point(20, 20),
-                AutoSize = true
+                Location = new Point(20, 20), // Vị trí trên form
+                AutoSize = true               // Tự động điều chỉnh kích thước theo nội dung
             };
 
+            // Ô nhập địa chỉ IP server (mặc định là localhost)
             serverInput = new TextBox
             {
                 Text = "127.0.0.1",
@@ -80,14 +87,17 @@ namespace CaroClient
                 Size = new Size(150, 20)
             };
 
+            // Nút "Connect" để kết nối/ ngắt kết nối với server
             connectButton = new Button
             {
                 Text = "Connect",
                 Location = new Point(280, 19),
                 Size = new Size(80, 23)
             };
+            // Gán sự kiện khi click nút "Connect"
             connectButton.Click += Connect_Click;
 
+            // Nhãn hiển thị trạng thái kết nối (mặc định là "Not connected")
             statusLabel = new Label
             {
                 Text = "Not connected",
@@ -95,6 +105,7 @@ namespace CaroClient
                 Size = new Size(500, 20)
             };
 
+            // Nhãn hiển thị phòng hiện tại (mặc định là "None")
             roomLabel = new Label
             {
                 Text = "Room: None",
@@ -102,39 +113,50 @@ namespace CaroClient
                 Size = new Size(200, 20)
             };
 
-            // Game board
+            // --------- Bảng chơi game Caro ---------
+
+            // Tạo panel hiển thị bàn cờ
             boardPanel = new Panel
             {
                 Location = new Point(20, 100),
                 Size = new Size(Common.BOARD_SIZE * Common.CELL_SIZE, Common.BOARD_SIZE * Common.CELL_SIZE),
-                BorderStyle = BorderStyle.FixedSingle
+                BorderStyle = BorderStyle.FixedSingle // Viền xung quanh bàn cờ
             };
+            // Gán sự kiện vẽ lại bàn cờ khi cần thiết
             boardPanel.Paint += BoardPanel_Paint;
+            // Gán sự kiện click chuột lên bàn cờ
             boardPanel.MouseClick += BoardPanel_MouseClick;
 
-            // Chat controls
+            // --------- Giao diện chat ---------
+
+            // ListBox hiển thị nội dung các tin nhắn chat
             chatBox = new ListBox
             {
                 Location = new Point(Common.BOARD_SIZE * Common.CELL_SIZE + 50, 100),
                 Size = new Size(250, 400),
-                IntegralHeight = false
+                IntegralHeight = false // Tránh việc tự co giãn chiều cao để vừa item
             };
 
+            // TextBox để người dùng nhập nội dung chat
             chatInput = new TextBox
             {
                 Location = new Point(Common.BOARD_SIZE * Common.CELL_SIZE + 50, 510),
                 Size = new Size(170, 20)
             };
+            // Gửi tin nhắn khi người dùng nhấn phím Enter
             chatInput.KeyPress += (s, e) => { if (e.KeyChar == (char)13) SendChatMessage(); };
 
+            // Nút "Send" để gửi tin nhắn chat
             sendButton = new Button
             {
                 Text = "Send",
                 Location = new Point(Common.BOARD_SIZE * Common.CELL_SIZE + 230, 509),
                 Size = new Size(70, 23)
             };
+            // Gán sự kiện gửi tin nhắn khi click nút
             sendButton.Click += (s, e) => SendChatMessage();
 
+            // --------- Thêm tất cả các control vào form ---------
             this.Controls.Add(serverLabel);
             this.Controls.Add(serverInput);
             this.Controls.Add(connectButton);
@@ -145,18 +167,20 @@ namespace CaroClient
             this.Controls.Add(chatInput);
             this.Controls.Add(sendButton);
 
+            // Gán sự kiện khi form đóng thì tự động ngắt kết nối với server
             this.FormClosing += (s, e) => DisconnectFromServer();
         }
 
+        // Sự kiện khi người dùng click nút "Connect"
         private void Connect_Click(object sender, EventArgs e)
         {
-            if (client == null)
+            if (client == null) // Nếu chưa có client (chưa kết nối)
             {
-                ConnectToServer();
+                ConnectToServer(); // Thực hiện kết nối đến server
             }
-            else
+            else // Nếu đã kết nối
             {
-                DisconnectFromServer();
+                DisconnectFromServer(); // Ngắt kết nối với server
             }
         }
 
