@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -34,7 +36,7 @@ namespace CaroClient
     public class CaroClient : Form
     {
         private TcpClient client;
-        private NetworkStream stream;
+        private SslStream sslStream;
         private Thread listenThread;
         private Panel boardPanel;
         private Label statusLabel;
@@ -166,7 +168,8 @@ namespace CaroClient
                 client = new TcpClient();
                 client.Connect(serverAddress, 8888);
 
-                stream = client.GetStream();
+                sslStream = new SslStream(client.GetStream(), false, new RemoteCertificateValidationCallback(ValidateServerCertificate), null);
+                sslStream.AuthenticateAsClient(serverAddress);
 
                 listenThread = new Thread(ListenForServerMessages);
                 listenThread.IsBackground = true;
@@ -184,6 +187,24 @@ namespace CaroClient
             }
         }
 
+        private static bool ValidateServerCertificate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
+        {
+            // Bỏ qua lỗi chứng chỉ trong môi trường phát triển (không khuyến khích trong production)
+            if (sslPolicyErrors == SslPolicyErrors.None)
+                return true;
+            else if (sslPolicyErrors == SslPolicyErrors.RemoteCertificateNameMismatch)
+            {
+                // Lỗi mismatch tên chứng chỉ, bỏ qua khi phát triển
+                return true;
+            }
+            else
+            {
+                MessageBox.Show($"SSL Certificate error: {sslPolicyErrors}", "SSL Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+
         private void DisconnectFromServer()
         {
             if (client != null)
@@ -195,9 +216,9 @@ namespace CaroClient
                         listenThread.Abort();
                     }
 
-                    if (stream != null)
+                    if (sslStream != null)
                     {
-                        stream.Close();
+                        sslStream.Close();
                     }
 
                     client.Close();
@@ -205,7 +226,7 @@ namespace CaroClient
                 catch { }
 
                 client = null;
-                stream = null;
+                sslStream = null;
 
                 gameStatus = Common.GameStatus.Waiting;
                 playerRole = Common.CellState.Empty;
@@ -232,7 +253,7 @@ namespace CaroClient
             {
                 int bytesRead;
 
-                while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                while ((bytesRead = sslStream.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
                     string command, data;
@@ -366,7 +387,7 @@ namespace CaroClient
         private void SendChatMessage()
         {
             string message = chatInput.Text.Trim();
-            if (!string.IsNullOrEmpty(message) && client != null && stream != null)
+            if (!string.IsNullOrEmpty(message) && client != null && sslStream != null)
             {
                 SendMessage(Common.FormatMessage("CHAT", message));
                 chatInput.Text = "";
@@ -378,7 +399,7 @@ namespace CaroClient
             try
             {
                 byte[] data = Encoding.ASCII.GetBytes(message);
-                stream.Write(data, 0, data.Length);
+                sslStream.Write(data, 0, data.Length);
             }
             catch (Exception ex)
             {
