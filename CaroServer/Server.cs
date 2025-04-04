@@ -1,9 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using System.Net.Security;
+using System.Security.Authentication;
 
 namespace CaroServer
 {
@@ -31,7 +34,7 @@ namespace CaroServer
 
     public class Room
     {
-        public List<TcpClient> Players { get; set; } = new List<TcpClient>();
+        public List<SslStream> Players { get; set; } = new List<SslStream>();
         public Common.CellState[,] Board { get; set; } = new Common.CellState[Common.BOARD_SIZE, Common.BOARD_SIZE];
         public Common.GameStatus GameStatus { get; set; } = Common.GameStatus.Waiting;
         public int CurrentPlayerIndex { get; set; } = 0;
@@ -46,12 +49,8 @@ namespace CaroServer
         public void InitializeBoard()
         {
             for (int i = 0; i < Common.BOARD_SIZE; i++)
-            {
                 for (int j = 0; j < Common.BOARD_SIZE; j++)
-                {
                     Board[i, j] = Common.CellState.Empty;
-                }
-            }
         }
     }
 
@@ -60,11 +59,15 @@ namespace CaroServer
         private TcpListener server;
         private List<Room> rooms = new List<Room>();
         private Action<string> updateStatusCallback;
-       
+        private X509Certificate2 serverCertificate;
 
         public Server(Action<string> updateStatusCallback)
         {
             this.updateStatusCallback = updateStatusCallback;
+
+            string certPath = @"E:\LTM\BTL(tmp)\LTM_Nhom17\CaroServer\server.pfx";
+            string certPassword = "Kiet.132003";
+            serverCertificate = new X509Certificate2(certPath, certPassword);
         }
 
         public void Start()
@@ -73,7 +76,6 @@ namespace CaroServer
             {
                 server = new TcpListener(IPAddress.Any, 8888);
                 server.Start();
-
                 updateStatusCallback?.Invoke("Server Status: Running on port 8888");
 
                 Thread listenerThread = new Thread(ListenForClients);
@@ -93,14 +95,6 @@ namespace CaroServer
                 server.Stop();
                 server = null;
 
-                foreach (var room in rooms)
-                {
-                    foreach (var client in room.Players)
-                    {
-                        try { client.Close(); } catch { }
-                    }
-                }
-
                 rooms.Clear();
                 updateStatusCallback?.Invoke("Server Status: Not Running");
             }
@@ -113,12 +107,25 @@ namespace CaroServer
                 while (true)
                 {
                     TcpClient client = server.AcceptTcpClient();
-                    AssignClientToRoom(client);
+
+                    Thread sslThread = new Thread(() =>
+                    {
+                        SslStream sslStream = new SslStream(client.GetStream(), false);
+                        try
+                        {
+                            sslStream.AuthenticateAsServer(serverCertificate, false, SslProtocols.Tls12, false);
+                            AssignClientToRoom(sslStream);
+                        }
+                        catch (Exception ex)
+                        {
+                            updateStatusCallback?.Invoke($"SSL Auth failed: {ex.Message}");
+                            sslStream.Close();
+                        }
+                    });
+
+                    sslThread.IsBackground = true;
+                    sslThread.Start();
                 }
-            }
-            catch (SocketException)
-            {
-                // Server stopped
             }
             catch (Exception ex)
             {
@@ -126,7 +133,7 @@ namespace CaroServer
             }
         }
 
-        private void AssignClientToRoom(TcpClient client)
+        private void AssignClientToRoom(SslStream sslStream)
         {
             Room availableRoom = null;
 
@@ -146,18 +153,16 @@ namespace CaroServer
             }
 
             int playerIndex = availableRoom.Players.Count;
-            availableRoom.Players.Add(client);
+            availableRoom.Players.Add(sslStream);
 
             updateStatusCallback?.Invoke($"Player joined Room {availableRoom.RoomId}. Players: {availableRoom.Players.Count}/2");
 
-            Thread clientThread = new Thread(() => HandleClient(client, availableRoom, playerIndex));
+            Thread clientThread = new Thread(() => HandleClient(sslStream, availableRoom, playerIndex));
             clientThread.IsBackground = true;
             clientThread.Start();
 
-            NetworkStream stream = client.GetStream();
             string role = (playerIndex == 0) ? "X" : "O";
-            byte[] roleMsg = Encoding.ASCII.GetBytes(Common.FormatMessage("ROLE", $"{role},{availableRoom.RoomId}"));
-            stream.Write(roleMsg, 0, roleMsg.Length);
+            SendMessage(sslStream, Common.FormatMessage("ROLE", $"{role},{availableRoom.RoomId}"));
 
             if (availableRoom.Players.Count == 2)
             {
@@ -167,21 +172,19 @@ namespace CaroServer
             }
         }
 
-
-        private void HandleClient(TcpClient client, Room room, int playerIndex)
+        private void HandleClient(SslStream sslStream, Room room, int playerIndex)
         {
-            NetworkStream stream = client.GetStream();
             byte[] buffer = new byte[1024];
 
             try
             {
-                int bytesRead;
-
-                while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                while (true)
                 {
-                    string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                    string command, data;
-                    Common.ParseMessage(message, out command, out data);
+                    int bytesRead = sslStream.Read(buffer, 0, buffer.Length);
+                    if (bytesRead == 0) break;
+
+                    string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    Common.ParseMessage(message, out string command, out string data);
 
                     if (command == "MOVE" && room.GameStatus == Common.GameStatus.Playing && room.CurrentPlayerIndex == playerIndex)
                     {
@@ -228,37 +231,34 @@ namespace CaroServer
                     }
                 }
             }
-            catch (Exception)
+            catch
             {
-                if (room.Players.Contains(client))
+                if (room.Players.Contains(sslStream))
                 {
-                    room.Players.Remove(client);
+                    room.Players.Remove(sslStream);
                     updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected. {room.Players.Count}/2 players.");
                     BroadcastToRoom(room, Common.FormatMessage("DISCONNECT", $"Player {playerIndex + 1} disconnected"));
-
                     if (room.GameStatus == Common.GameStatus.Playing)
-                    {
                         room.GameStatus = Common.GameStatus.Waiting;
-                    }
-
-                    try { client.Close(); } catch { }
                 }
+
+                sslStream.Close();
             }
         }
 
-
         private void BroadcastToRoom(Room room, string message)
         {
-            byte[] data = Encoding.ASCII.GetBytes(message);
-            foreach (var client in room.Players)
+            byte[] data = Encoding.UTF8.GetBytes(message);
+            foreach (var ssl in room.Players)
             {
-                try
-                {
-                    NetworkStream stream = client.GetStream();
-                    stream.Write(data, 0, data.Length);
-                }
-                catch { }
+                try { ssl.Write(data, 0, data.Length); } catch { }
             }
+        }
+
+        private void SendMessage(SslStream ssl, string message)
+        {
+            byte[] data = Encoding.UTF8.GetBytes(message);
+            ssl.Write(data, 0, data.Length);
         }
 
         private bool CheckWin(Room room, int row, int col)
@@ -269,56 +269,47 @@ namespace CaroServer
             // Horizontal
             count = 0;
             for (int c = Math.Max(0, col - 4); c <= Math.Min(Common.BOARD_SIZE - 1, col + 4); c++)
-            {
-                if (room.Board[row, c] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
-            }
+                count = (room.Board[row, c] == player) ? count + 1 : 0;
+            if (count >= Common.WINNING_COUNT) return true;
 
             // Vertical
             count = 0;
             for (int r = Math.Max(0, row - 4); r <= Math.Min(Common.BOARD_SIZE - 1, row + 4); r++)
-            {
-                if (room.Board[r, col] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
-            }
+                count = (room.Board[r, col] == player) ? count + 1 : 0;
+            if (count >= Common.WINNING_COUNT) return true;
 
-            // Diagonal (top-left to bottom-right)
+            // Diagonal TL-BR
             count = 0;
             for (int i = -4; i <= 4; i++)
             {
                 int r = row + i;
                 int c = col + i;
                 if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE)
-                {
-                    if (room.Board[r, c] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
-                }
+                    count = (room.Board[r, c] == player) ? count + 1 : 0;
+                if (count >= Common.WINNING_COUNT) return true;
             }
 
-            // Diagonal (top-right to bottom-left)
+            // Diagonal TR-BL
             count = 0;
             for (int i = -4; i <= 4; i++)
             {
                 int r = row + i;
                 int c = col - i;
                 if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE)
-                {
-                    if (room.Board[r, c] == player) { count++; if (count == Common.WINNING_COUNT) return true; } else { count = 0; }
-                }
+                    count = (room.Board[r, c] == player) ? count + 1 : 0;
+                if (count >= Common.WINNING_COUNT) return true;
             }
 
             return false;
         }
 
-    
         private bool IsBoardFull(Room room)
         {
             for (int i = 0; i < Common.BOARD_SIZE; i++)
-            {
                 for (int j = 0; j < Common.BOARD_SIZE; j++)
-                {
                     if (room.Board[i, j] == Common.CellState.Empty) return false;
-                }
-            }
+
             return true;
         }
     }
-   
 }
