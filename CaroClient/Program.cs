@@ -211,6 +211,8 @@ namespace CaroClient
             }
         }
 
+
+
         private static bool ValidateServerCertificate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
         {
             // Bỏ qua lỗi chứng chỉ trong môi trường phát triển (không khuyến khích trong production)
@@ -362,6 +364,8 @@ namespace CaroClient
                 }
             }
         }
+        
+        // Hiển thị trạng thái bàn cờ trên giao diện người dùng
 
         private void BoardPanel_Paint(object sender, PaintEventArgs e)
         {
@@ -392,6 +396,8 @@ namespace CaroClient
                 }
             }
         }
+
+        // Xử lý sự kiện click chuột trên bàn cờ
 
         private void BoardPanel_MouseClick(object sender, MouseEventArgs e)
         {
