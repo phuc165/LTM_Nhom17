@@ -66,7 +66,7 @@ namespace CaroServer
             this.updateStatusCallback = updateStatusCallback;
 
             string certPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\server.pfx");
-            string certPassword = "Kiet.132003";
+            string certPassword = "nhom17";
             serverCertificate = new X509Certificate2(certPath, certPassword);
         }
 
