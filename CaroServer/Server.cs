@@ -60,6 +60,8 @@ namespace CaroServer
         private List<Room> rooms = new List<Room>();
         private Action<string> updateStatusCallback;
         private X509Certificate2 serverCertificate;
+        private string serverPassword;
+        private bool isPasswordVerified = false;
 
         public Server(Action<string> updateStatusCallback)
         {
@@ -133,6 +135,36 @@ namespace CaroServer
             }
         }
 
+        private void RequestPassword(SslStream sslStream)
+        {
+            try
+            {
+                // Send PASSWORD_REQUIRED command as a separate message
+                SendMessage(sslStream, Common.FormatMessage("PASSWORD_REQUIRED", ""));
+
+                byte[] buffer = new byte[1024];
+                int bytesRead = sslStream.Read(buffer, 0, buffer.Length);
+                if (bytesRead == 0) return;
+
+                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+                Common.ParseMessage(message, out string command, out string data);
+
+                if (command == "PASSWORD" && data == serverPassword)
+                {
+                    SendMessage(sslStream, Common.FormatMessage("PASSWORD_ACCEPTED", ""));
+                    AssignClientToRoom(sslStream);
+                }
+                else
+                {
+                    SendMessage(sslStream, Common.FormatMessage("PASSWORD_REJECTED", "Incorrect password"));
+                    sslStream.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+            }
+        }
         private void AssignClientToRoom(SslStream sslStream)
         {
             Room availableRoom = null;
