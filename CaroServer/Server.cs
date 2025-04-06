@@ -63,9 +63,10 @@ namespace CaroServer
         private string serverPassword;
         private bool isPasswordVerified = false;
 
-        public Server(Action<string> updateStatusCallback)
+        public Server(Action<string> updateStatusCallback, string serverPassword)
         {
             this.updateStatusCallback = updateStatusCallback;
+            this.serverPassword = serverPassword;
 
             string certPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\server.pfx");
             string certPassword = "nhom17";
@@ -94,8 +95,44 @@ namespace CaroServer
         {
             if (server != null)
             {
+                // Notify clients about the server shutdown
+                foreach (var room in rooms)
+                {
+                    foreach (var client in room.Players)
+                    {
+                        try
+                        {
+                            // Send shutdown message to each client using sslStream
+                            var shutdownMessage = Common.FormatMessage("DISCONNECT", "");
+                            SendMessage(client, shutdownMessage); // Assuming client has sslStream
+                        }
+                        catch (Exception ex)
+                        {
+                            // Log exception if sending message fails
+                            Console.WriteLine($"Error sending shutdown message: {ex.Message}");
+                        }
+                    }
+                }
+
                 server.Stop();
                 server = null;
+
+                foreach (var room in rooms)
+                {
+                    foreach (var client in room.Players)
+                    {
+                        try
+                        {
+                            client.Close();
+                            client.Close();
+                        }
+                        catch (Exception ex)
+                        {
+                            // Log exception if client closing fails
+                            Console.WriteLine($"Error closing client connection: {ex.Message}");
+                        }
+                    }
+                }
 
                 rooms.Clear();
                 updateStatusCallback?.Invoke("Server Status: Not Running");
@@ -116,7 +153,7 @@ namespace CaroServer
                         try
                         {
                             sslStream.AuthenticateAsServer(serverCertificate, false, SslProtocols.Tls12, false);
-                            AssignClientToRoom(sslStream);
+                            RequestPassword(sslStream);
                         }
                         catch (Exception ex)
                         {
@@ -165,6 +202,7 @@ namespace CaroServer
                 Console.WriteLine($"Error: {ex.Message}");
             }
         }
+
         private void AssignClientToRoom(SslStream sslStream)
         {
             Room availableRoom = null;
@@ -203,6 +241,7 @@ namespace CaroServer
                 updateStatusCallback?.Invoke($"Room {availableRoom.RoomId}: Game started. Player X's turn.");
             }
         }
+
 
         private void HandleClient(SslStream sslStream, Room room, int playerIndex)
         {
@@ -299,38 +338,60 @@ namespace CaroServer
             int count;
 
             // Horizontal
-            count = 0;
-            for (int c = Math.Max(0, col - 4); c <= Math.Min(Common.BOARD_SIZE - 1, col + 4); c++)
-                count = (room.Board[row, c] == player) ? count + 1 : 0;
+            count = 1;  // Start count with the current position
+            for (int c = col + 1; c < Common.BOARD_SIZE && room.Board[row, c] == player; c++)
+                count++;
+            for (int c = col - 1; c >= 0 && room.Board[row, c] == player; c--)
+                count++;
             if (count >= Common.WINNING_COUNT) return true;
 
             // Vertical
-            count = 0;
-            for (int r = Math.Max(0, row - 4); r <= Math.Min(Common.BOARD_SIZE - 1, row + 4); r++)
-                count = (room.Board[r, col] == player) ? count + 1 : 0;
+            count = 1;  // Start count with the current position
+            for (int r = row + 1; r < Common.BOARD_SIZE && room.Board[r, col] == player; r++)
+                count++;
+            for (int r = row - 1; r >= 0 && room.Board[r, col] == player; r--)
+                count++;
             if (count >= Common.WINNING_COUNT) return true;
 
             // Diagonal TL-BR
-            count = 0;
-            for (int i = -4; i <= 4; i++)
+            count = 1;  // Start count with the current position
+            for (int i = 1; i < Common.BOARD_SIZE; i++)
             {
                 int r = row + i;
                 int c = col + i;
-                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE)
-                    count = (room.Board[r, c] == player) ? count + 1 : 0;
-                if (count >= Common.WINNING_COUNT) return true;
+                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE && room.Board[r, c] == player)
+                    count++;
+                else break;
             }
+            for (int i = 1; i < Common.BOARD_SIZE; i++)
+            {
+                int r = row - i;
+                int c = col - i;
+                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE && room.Board[r, c] == player)
+                    count++;
+                else break;
+            }
+            if (count >= Common.WINNING_COUNT) return true;
 
             // Diagonal TR-BL
-            count = 0;
-            for (int i = -4; i <= 4; i++)
+            count = 1;  // Start count with the current position
+            for (int i = 1; i < Common.BOARD_SIZE; i++)
             {
                 int r = row + i;
                 int c = col - i;
-                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE)
-                    count = (room.Board[r, c] == player) ? count + 1 : 0;
-                if (count >= Common.WINNING_COUNT) return true;
+                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE && room.Board[r, c] == player)
+                    count++;
+                else break;
             }
+            for (int i = 1; i < Common.BOARD_SIZE; i++)
+            {
+                int r = row - i;
+                int c = col + i;
+                if (r >= 0 && r < Common.BOARD_SIZE && c >= 0 && c < Common.BOARD_SIZE && room.Board[r, c] == player)
+                    count++;
+                else break;
+            }
+            if (count >= Common.WINNING_COUNT) return true;
 
             return false;
         }
