@@ -291,6 +291,9 @@ namespace CaroClient
                 sendCountdownLabel.Text = "0.0s";
             }
         }
+
+        // Kết nối đến server
+
         private void ConnectToServer()
         {
             try
@@ -379,6 +382,8 @@ namespace CaroClient
             }
         }
 
+
+        // Ngắt kết nối từ server
 
         private void DisconnectFromServer()
         {
@@ -647,6 +652,11 @@ namespace CaroClient
                 }
             });
         }
+
+
+        // Vẽ bàn cờ
+
+
         private void BoardPanel_Paint(object sender, PaintEventArgs e)
         {
             Graphics g = e.Graphics;
@@ -676,6 +686,10 @@ namespace CaroClient
                 }
             }
         }
+
+        // Xử lý sự kiện nhấn đầu hàng
+
+
         private void Surrender_Click(object sender, EventArgs e)
         {
             if (gameStatus == Common.GameStatus.Playing)
@@ -683,6 +697,9 @@ namespace CaroClient
                 SendMessage(Common.FormatMessage("SURRENDER", ""));
             }
         }
+
+        // Xử lý sự kiện nhấn chuột trên bàn cờ
+
         private void BoardPanel_MouseClick(object sender, MouseEventArgs e)
         {
             if (gameStatus == Common.GameStatus.Playing && isMyTurn)
@@ -698,6 +715,8 @@ namespace CaroClient
             }
         }
 
+        // Xử lý sự kiện nhấn nút gửi tin nhắn chat
+
         private void SendChatMessage()
         {
             string message = chatInput.Text.Trim();
@@ -707,6 +726,8 @@ namespace CaroClient
                 chatInput.Text = "";
             }
         }
+
+        // Gửi tin nhắn đến server
 
         private void SendMessage(string message)
         {
@@ -722,6 +743,8 @@ namespace CaroClient
             }
         }
 
+        // Thêm tin nhắn vào khung chat
+
         private void AddChatMessage(string message)
         {
             if (chatBox.InvokeRequired)
@@ -735,6 +758,8 @@ namespace CaroClient
             }
         }
 
+        // Cập nhật trạng thái trên giao diện
+
         private void UpdateStatus(string status)
         {
             if (statusLabel.InvokeRequired)
@@ -746,6 +771,7 @@ namespace CaroClient
                 statusLabel.Text = status;
             }
         }
+
 
         private void UpdateRoomLabel(string text)
         {
