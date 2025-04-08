@@ -67,7 +67,8 @@ namespace CaroClient
         private System.Windows.Forms.Timer timeoutTimer;
         private DateTime lastReceiveTime;
         private DateTime lastSendTime;
-
+        private bool receiveTimeoutOccurred = false;
+        private bool sendTimeoutOccurred = false;
 
         public CaroClient()
         {
@@ -269,20 +270,107 @@ namespace CaroClient
         {
             if (client != null && client.Connected)
             {
-                // Cập nhật bộ đếm ngược receive
-                if (lastReceiveTime != DateTime.MinValue)
+                bool shouldCheckSend = false;
+                bool shouldCheckReceive = false;
+
+                // Khi game chưa bắt đầu, chỉ đếm receive
+                if (gameStatus == Common.GameStatus.Waiting)
                 {
-                    double receiveRemaining = ((double)receiveTimeoutInput.Value - (DateTime.Now - lastReceiveTime).TotalMilliseconds) / 1000;
-                    receiveCountdownLabel.Text = $"{Math.Max(0, receiveRemaining):0.0}s";
-                    receiveCountdownLabel.ForeColor = receiveRemaining < 5 ? Color.Red : Color.Green;
+                    shouldCheckReceive = true;
+                    // Reset lại thời gian đếm nhận khi chuyển sang trạng thái Waiting
+                    if (lastReceiveTime == DateTime.MinValue)
+                    {
+                        lastReceiveTime = DateTime.Now; // Cập nhật lại thời gian ngay khi vào trạng thái Waiting
+                    }
+                    // Đảm bảo rằng không làm ảnh hưởng đến bộ đếm gửi
+                    if (lastSendTime != DateTime.MinValue)
+                    {
+                        lastSendTime = DateTime.MinValue; // Reset bộ đếm gửi khi chuyển sang Waiting
+                    }
+                }
+                else if (gameStatus == Common.GameStatus.Playing)
+                {
+                    // Khi game đã bắt đầu, kiểm tra lượt
+                    if (isMyTurn)
+                    {
+                        // Nếu là lượt của người chơi, đếm send
+                        shouldCheckSend = true;
+                        // Reset lại thời gian đếm gửi khi chuyển sang trạng thái Playing
+                        if (lastSendTime == DateTime.MinValue)
+                        {
+                            lastSendTime = DateTime.Now; // Cập nhật lại thời gian ngay khi vào lượt người chơi
+                        }
+                        // Đảm bảo rằng không làm ảnh hưởng đến bộ đếm nhận
+                        if (lastReceiveTime != DateTime.MinValue)
+                        {
+                            lastReceiveTime = DateTime.MinValue; // Reset bộ đếm nhận khi chuyển sang lượt người chơi
+                        }
+                    }
+                    else
+                    {
+                        // Nếu là lượt của đối thủ, đếm receive
+                        shouldCheckReceive = true;
+                        // Reset lại thời gian đếm nhận khi chuyển sang lượt đối thủ
+                        if (lastReceiveTime == DateTime.MinValue)
+                        {
+                            lastReceiveTime = DateTime.Now; // Cập nhật lại thời gian ngay khi vào lượt đối thủ
+                        }
+                        // Đảm bảo rằng không làm ảnh hưởng đến bộ đếm gửi
+                        if (lastSendTime != DateTime.MinValue)
+                        {
+                            lastSendTime = DateTime.MinValue; // Reset bộ đếm gửi khi chuyển sang lượt đối thủ
+                        }
+                    }
                 }
 
-                // Cập nhật bộ đếm ngược send
-                if (lastSendTime != DateTime.MinValue)
+                // Kiểm tra thời gian nhận (receive)
+                if (shouldCheckReceive)
                 {
-                    double sendRemaining = ((double)sendTimeoutInput.Value - (DateTime.Now - lastSendTime).TotalMilliseconds) / 1000;
+                    double receiveRemaining = 0;
+                    if (lastReceiveTime != DateTime.MinValue)
+                    {
+                        receiveRemaining = ((double)receiveTimeoutInput.Value - (DateTime.Now - lastReceiveTime).TotalMilliseconds) / 1000;
+                    }
+
+                    receiveCountdownLabel.Text = $"{Math.Max(0, receiveRemaining):0.0}s";
+                    receiveCountdownLabel.ForeColor = receiveRemaining < 5 ? Color.Red : Color.Green;
+
+                    if (receiveRemaining <= 0 && !receiveTimeoutOccurred)
+                    {
+                        receiveTimeoutOccurred = true;
+                        MessageBox.Show("Disconnected: No data received from server (timeout).", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        DisconnectFromServer();
+                        return;
+                    }
+                }
+                else
+                {
+                    receiveCountdownLabel.Text = "---";
+                }
+
+                // Kiểm tra thời gian gửi (send)
+                if (shouldCheckSend)
+                {
+                    double sendRemaining = 0;
+                    if (lastSendTime != DateTime.MinValue)
+                    {
+                        sendRemaining = ((double)sendTimeoutInput.Value - (DateTime.Now - lastSendTime).TotalMilliseconds) / 1000;
+                    }
+
                     sendCountdownLabel.Text = $"{Math.Max(0, sendRemaining):0.0}s";
                     sendCountdownLabel.ForeColor = sendRemaining < 5 ? Color.Red : Color.Green;
+
+                    if (sendRemaining <= 0 && !sendTimeoutOccurred)
+                    {
+                        sendTimeoutOccurred = true;
+                        MessageBox.Show("Disconnected: No data sent to server (timeout).", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        DisconnectFromServer();
+                        return;
+                    }
+                }
+                else
+                {
+                    sendCountdownLabel.Text = "---";
                 }
             }
             else
@@ -336,6 +424,9 @@ namespace CaroClient
 
                 UpdateUIOnConnected();
                 Console.WriteLine($"[Client] Connected to server at {serverAddress}");
+                receiveTimeoutOccurred = false;
+                sendTimeoutOccurred = false;
+
             }
             catch (Exception ex)
             {
@@ -412,6 +503,8 @@ namespace CaroClient
                 if (!this.IsDisposed)
                 {
                     ResetClientState();
+                    receiveTimeoutOccurred = false; 
+                    sendTimeoutOccurred = false;    
                     UpdateUIOnDisconnected();
                 }
             }
@@ -531,7 +624,8 @@ namespace CaroClient
                         break;
 
                     case "DISCONNECT":
-                        HandleOpponentDisconnection(data);
+                        DisconnectFromServer();
+                        
                         break;
 
                     case "ROLE":
@@ -581,6 +675,16 @@ namespace CaroClient
                         }
                         break;
 
+                    case "WAIT_FOR_OPPONENT":
+                        InitializeBoard();
+                        lastMoveRow = -1;
+                        lastMoveCol = -1;
+                        gameStatus = Common.GameStatus.Playing;
+                        isMyTurn = (playerRole == Common.CellState.X);
+                        UpdateBoard(); MessageBox.Show(data, "Waiting for opponent", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        UpdateStatus(data); // Hiển thị thông báo trong status bar hoặc label
+                        break;
+
                     case "RESTART":
 
                         InitializeBoard();
@@ -606,29 +710,7 @@ namespace CaroClient
                 Console.WriteLine($"[Client {roomId}] Message processing error: {ex.Message}");
             }
         }
-        private void HandleOpponentDisconnection(string reason)
-        {
-            Console.WriteLine($"[Client {roomId}] Opponent disconnected: {reason}");
-
-            this.Invoke((MethodInvoker)delegate
-            {
-                // Reset giao diện bàn cờ
-                ResetBoard();
-
-                // Cập nhật trạng thái
-                UpdateStatus($"Đối thủ đã thoát: {reason}. Đang chờ người chơi mới...");
-
-                // Hiển thị thông báo cho người chơi
-                MessageBox.Show($"Đối thủ đã thoát: {reason}\nBạn sẽ được ghép với người chơi mới khi có kết nối",
-                              "Đối thủ thoát",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Information);
-
-                // Chuyển về trạng thái chờ
-                gameStatus = Common.GameStatus.Waiting;
-                playerRole = Common.CellState.Empty;
-            });
-        }
+        
 
         private void ResetBoard()
         {
