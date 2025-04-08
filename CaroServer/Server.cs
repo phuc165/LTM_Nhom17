@@ -34,7 +34,8 @@ namespace CaroServer
 
     public class Room
     {
-        public List<SslStream> Players { get; set; } = new List<SslStream>();
+        public SslStream[] Players { get; set; } = new SslStream[2];
+
         public Common.CellState[,] Board { get; set; } = new Common.CellState[Common.BOARD_SIZE, Common.BOARD_SIZE];
         public Common.GameStatus GameStatus { get; set; } = Common.GameStatus.Waiting;
         public int CurrentPlayerIndex { get; set; } = 0;
@@ -206,40 +207,49 @@ namespace CaroServer
         private void AssignClientToRoom(SslStream sslStream)
         {
             Room availableRoom = null;
+            int playerIndex = 0;
 
-            foreach (var room in rooms)
+            lock (rooms)
             {
-                if (room.Players.Count < 2 && room.GameStatus == Common.GameStatus.Waiting)
+                availableRoom = rooms.FirstOrDefault(r => r.Players.All(p => p == null));
+
+                // If no empty rooms, check for rooms with exactly 1 player (waiting for opponent)
+                if (availableRoom == null)
                 {
-                    availableRoom = room;
-                    break;
+                    availableRoom = rooms.FirstOrDefault(r =>
+                        r.Players.Count(p => p != null) == 1 &&
+                        r.GameStatus == Common.GameStatus.Waiting);
+                }
+
+                // If no such room, create new
+                if (availableRoom == null)
+                {
+                    availableRoom = new Room(rooms.Count);
+                    rooms.Add(availableRoom);
+                }
+
+                // Find first available player index (0 or 1)
+                playerIndex = availableRoom.Players[0] == null ? 0 : 1;
+
+                // Set the player in the slot
+                availableRoom.Players[playerIndex] = sslStream;
+
+                updateStatusCallback?.Invoke($"Player joined Room {availableRoom.RoomId}. Players: {availableRoom.Players.Count(p => p != null)}/2");
+
+                string role = (playerIndex == 0) ? "X" : "O";
+                SendMessage(sslStream, Common.FormatMessage("ROLE", $"{role},{availableRoom.RoomId}") + "\n");
+
+                if (availableRoom.Players.Count(p => p != null) == 2)
+                {
+                    availableRoom.GameStatus = Common.GameStatus.Playing;
+                    BroadcastToRoom(availableRoom, Common.FormatMessage("START", "") + "\n");
+                    updateStatusCallback?.Invoke($"Room {availableRoom.RoomId}: Game started. Player X's turn.");
                 }
             }
-
-            if (availableRoom == null)
-            {
-                availableRoom = new Room(rooms.Count);
-                rooms.Add(availableRoom);
-            }
-
-            int playerIndex = availableRoom.Players.Count;
-            availableRoom.Players.Add(sslStream);
-
-            updateStatusCallback?.Invoke($"Player joined Room {availableRoom.RoomId}. Players: {availableRoom.Players.Count}/2");
 
             Thread clientThread = new Thread(() => HandleClient(sslStream, availableRoom, playerIndex));
             clientThread.IsBackground = true;
             clientThread.Start();
-
-            string role = (playerIndex == 0) ? "X" : "O";
-            SendMessage(sslStream, Common.FormatMessage("ROLE", $"{role},{availableRoom.RoomId}"));
-
-            if (availableRoom.Players.Count == 2)
-            {
-                availableRoom.GameStatus = Common.GameStatus.Playing;
-                BroadcastToRoom(availableRoom, Common.FormatMessage("START", ""));
-                updateStatusCallback?.Invoke($"Room {availableRoom.RoomId}: Game started. Player X's turn.");
-            }
         }
 
 
@@ -267,18 +277,18 @@ namespace CaroServer
                             room.Board[row, col] == Common.CellState.Empty)
                         {
                             room.Board[row, col] = (playerIndex == 0) ? Common.CellState.X : Common.CellState.O;
-                            BroadcastToRoom(room, Common.FormatMessage("MOVE", $"{row},{col},{playerIndex}"));
+                            BroadcastToRoom(room, Common.FormatMessage("MOVE", $"{row},{col},{playerIndex} \n"));
 
                             if (CheckWin(room, row, col))
                             {
                                 room.GameStatus = Common.GameStatus.GameOver;
-                                BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", $"Player {((playerIndex == 0) ? "X" : "O")} wins!"));
+                                BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", $"Player {((playerIndex == 0) ? "X" : "O")} wins! \n"));
                                 updateStatusCallback?.Invoke($"Room {room.RoomId}: Player {((playerIndex == 0) ? "X" : "O")} wins!");
                             }
                             else if (IsBoardFull(room))
                             {
                                 room.GameStatus = Common.GameStatus.GameOver;
-                                BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", "Draw!"));
+                                BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", "Draw! \n"));
                                 updateStatusCallback?.Invoke($"Room {room.RoomId}: Draw!");
                             }
                             else
@@ -290,15 +300,56 @@ namespace CaroServer
                     }
                     else if (command == "CHAT")
                     {
-                        BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data}"));
+                        BroadcastToRoom(room, Common.FormatMessage("CHAT", $"Player {playerIndex + 1}: {data} \n"));
                     }
+                    else if (command == "SURRENDER")
+                    {
+                        room.GameStatus = Common.GameStatus.GameOver;
+                        string surrenderMsg = $"Player {((playerIndex == 0) ? "X" : "O")} surrendered";
+                        BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", surrenderMsg + "\n"));
+                        updateStatusCallback?.Invoke($"Room {room.RoomId}: {surrenderMsg}");
+                    }
+
                     else if (command == "RESTART" && room.GameStatus == Common.GameStatus.GameOver)
                     {
                         room.InitializeBoard();
                         room.GameStatus = Common.GameStatus.Playing;
                         room.CurrentPlayerIndex = 0;
-                        BroadcastToRoom(room, Common.FormatMessage("RESTART", ""));
+                        BroadcastToRoom(room, Common.FormatMessage("RESTART", "" + "\n"));
                         updateStatusCallback?.Invoke($"Room {room.RoomId}: Game restarted. Player X's turn.");
+                    }
+                    else if (command == "DISCONNECT")
+                    {
+                        room.Players[playerIndex] = null;
+                        room.InitializeBoard();
+                        room.GameStatus = Common.GameStatus.Waiting;
+                        room.CurrentPlayerIndex = 0;
+                        updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected. {room.Players.Count(p => p != null)}/2 players.");
+
+                        // Nếu phòng có một người chơi, gửi thông báo chờ
+                        if (room.Players.Count(p => p != null) == 1)
+                        {
+                            BroadcastToRoom(room, Common.FormatMessage("WAIT_FOR_OPPONENT", "Waiting for opponent...") + "\n");
+                        }
+                        else
+                        {
+                            // Nếu có đủ 2 người, khởi động lại trò chơi
+                            BroadcastToRoom(room, Common.FormatMessage("RESTART", "") + "\n");
+                        }
+                    }
+                    else if (command == "SURRENDER")
+                    {
+                        room.GameStatus = Common.GameStatus.GameOver;
+                        string surrenderMsg = $"Player {((playerIndex == 0) ? "X" : "O")} surrendered";
+                        BroadcastToRoom(room, Common.FormatMessage("GAMEOVER", surrenderMsg + "\n"));
+
+                        // Instead of removing player, set to null and keep room waiting
+                        room.Players[playerIndex] = null;
+                        room.InitializeBoard();
+                        room.GameStatus = Common.GameStatus.Waiting;
+                        room.CurrentPlayerIndex = 0;
+
+                        updateStatusCallback?.Invoke($"Room {room.RoomId}: {surrenderMsg}. Waiting for player.");
                     }
                 }
             }
@@ -306,15 +357,21 @@ namespace CaroServer
             {
                 if (room.Players.Contains(sslStream))
                 {
-                    room.Players.Remove(sslStream);
-                    updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected. {room.Players.Count}/2 players.");
-                    BroadcastToRoom(room, Common.FormatMessage("DISCONNECT", $"Player {playerIndex + 1} disconnected"));
+                    int disconnectedIndex = Array.IndexOf(room.Players, sslStream);
+                    room.Players[disconnectedIndex] = null;
+                    int count = room.Players.Count(p => p != null);
+
+                    updateStatusCallback?.Invoke($"Room {room.RoomId}: Player disconnected. {room.Players.Count(p => p != null)}/2 players.");
+
+                    BroadcastToRoom(room, Common.FormatMessage("DISCONNECT", $"Player {disconnectedIndex + 1} disconnected") + "\n");
+
                     if (room.GameStatus == Common.GameStatus.Playing)
                         room.GameStatus = Common.GameStatus.Waiting;
                 }
 
                 sslStream.Close();
             }
+
         }
 
         private void BroadcastToRoom(Room room, string message)
