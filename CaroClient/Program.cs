@@ -187,7 +187,7 @@ namespace CaroClient
                 Minimum = 1000,
                 Maximum = 60000,
                 Increment = 1000,
-                Value = 15000,
+                Value = 60000,
                 Location = new Point(receiveTimeoutTextLabel.Right + 20, 10),
                 Size = new Size(80, 20)
             };
@@ -212,7 +212,7 @@ namespace CaroClient
                 Minimum = 1000,
                 Maximum = 60000,
                 Increment = 1000,
-                Value = 15000,
+                Value = 60000,
                 Location = new Point(sendTimeoutTextLabel.Right + 20, 35),
                 Size = new Size(80, 20)
             };
