@@ -104,8 +104,10 @@ namespace CaroServer
                         try
                         {
                             // Send shutdown message to each client using sslStream
-                            var shutdownMessage = Common.FormatMessage("DISCONNECT", "");
-                            SendMessage(client, shutdownMessage); // Assuming client has sslStream
+                            if (client != null)
+                            {
+                                SendMessage(client, Common.FormatMessage("STOP_SERVER", "Server is shutting down"));
+                            }
                         }
                         catch (Exception ex)
                         {
