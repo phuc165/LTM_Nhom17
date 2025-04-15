@@ -58,10 +58,7 @@ namespace CaroClient
         private int roomId = -1;
         private int lastMoveRow = -1;
         private int lastMoveCol = -1;
-        private NumericUpDown receiveTimeoutInput;
-        private NumericUpDown sendTimeoutInput;
-        private Label receiveTimeoutLabel;
-        private Label sendTimeoutLabel;
+        private const int TIMEOUT_MS = 30000;
         private Label receiveCountdownLabel;
         private Label sendCountdownLabel;
         private System.Windows.Forms.Timer timeoutTimer;
@@ -178,51 +175,27 @@ namespace CaroClient
             Label receiveTimeoutTextLabel = new Label
             {
                 Text = "Receive Timeout:",
-                Location = new Point(450, 10),
+                Location = new Point(450, 20),
                 AutoSize = true
             };
-
-            receiveTimeoutInput = new NumericUpDown
-            {
-                Minimum = 1000,
-                Maximum = 60000,
-                Increment = 1000,
-                Value = 60000,
-                Location = new Point(receiveTimeoutTextLabel.Right + 20, 10),
-                Size = new Size(80, 20)
-            };
-
             receiveCountdownLabel = new Label
             {
-                Text = "15.0s",
-                Location = new Point(receiveTimeoutInput.Right + 20, 10),
+                Location = new Point(500, 20),
+                ForeColor = Color.Green,
                 AutoSize = true,
-                ForeColor = Color.Green
             };
 
             Label sendTimeoutTextLabel = new Label
             {
                 Text = "Send Timeout:",
-                Location = new Point(receiveTimeoutTextLabel.Left, 35),
+                Location = new Point(450, 50),
                 AutoSize = true
             };
-
-            sendTimeoutInput = new NumericUpDown
-            {
-                Minimum = 1000,
-                Maximum = 60000,
-                Increment = 1000,
-                Value = 60000,
-                Location = new Point(sendTimeoutTextLabel.Right + 20, 35),
-                Size = new Size(80, 20)
-            };
-
             sendCountdownLabel = new Label
             {
-                Text = "15.0s",
-                Location = new Point(sendTimeoutInput.Right + 20, 35),
+                Location = new Point(500, 50),
+                ForeColor = Color.Green,
                 AutoSize = true,
-                ForeColor = Color.Green
             };
 
             this.Controls.Add(serverLabel);
@@ -239,13 +212,11 @@ namespace CaroClient
             this.Controls.Add(surrenderButton);
 
             this.FormClosing += (s, e) => DisconnectFromServer();
-
             this.Controls.Add(receiveTimeoutTextLabel);
-            this.Controls.Add(receiveTimeoutInput);
-            this.Controls.Add(receiveCountdownLabel);
             this.Controls.Add(sendTimeoutTextLabel);
-            this.Controls.Add(sendTimeoutInput);
+            this.Controls.Add(receiveCountdownLabel);
             this.Controls.Add(sendCountdownLabel);
+
             timeoutTimer = new System.Windows.Forms.Timer
             {
                 Interval = 100
@@ -329,17 +300,65 @@ namespace CaroClient
                     double receiveRemaining = 0;
                     if (lastReceiveTime != DateTime.MinValue)
                     {
-                        receiveRemaining = ((double)receiveTimeoutInput.Value - (DateTime.Now - lastReceiveTime).TotalMilliseconds) / 1000;
+                        receiveRemaining = (TIMEOUT_MS - (DateTime.Now - lastReceiveTime).TotalMilliseconds) / 1000;
                     }
 
-                    receiveCountdownLabel.Text = $"{Math.Max(0, receiveRemaining):0.0}s";
+                    receiveCountdownLabel.Text = $"Receive: {Math.Max(0, receiveRemaining):0.0}s";
                     receiveCountdownLabel.ForeColor = receiveRemaining < 5 ? Color.Red : Color.Green;
 
+
+                    // Xử lý khi timeout xảy ra (đối thủ hết giờ hoặc mất kết nối)
                     if (receiveRemaining <= 0 && !receiveTimeoutOccurred)
                     {
                         receiveTimeoutOccurred = true;
-                        MessageBox.Show("Disconnected: No data received from server (timeout).", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        DisconnectFromServer();
+
+                        this.BeginInvoke((MethodInvoker)delegate {
+                            string message = "";
+                            string title = "";
+
+                            if (gameStatus == Common.GameStatus.Playing && !isMyTurn)
+                            {
+                                message = "Opponent timed out. You win! Want to play again?";
+                                title = "Victory";
+                            }
+                            else if (gameStatus == Common.GameStatus.Waiting)
+                            {
+                                message = "No response from server. Try to reconnect?";
+                                title = "Connection Timeout";
+                            }
+                            else
+                            {
+                                message = "Connection timeout occurred. Try to reconnect?";
+                                title = "Timeout";
+                            }
+
+                            var result = MessageBox.Show(message, title,
+                                                       MessageBoxButtons.YesNo,
+                                                       MessageBoxIcon.Warning);
+
+                            if (result == DialogResult.Yes)
+                            {
+                                DisconnectFromServer();
+
+                                Task.Delay(1000).ContinueWith(t => {
+                                    this.Invoke((MethodInvoker)delegate {
+                                        try
+                                        {
+                                            ConnectToServer();
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            MessageBox.Show($"Unable to reconnect: {ex.Message}", "Error",
+                                                          MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                        }
+                                    });
+                                });
+                            }
+                            else
+                            {
+                                DisconnectFromServer();
+                            }
+                        });
                         return;
                     }
                 }
@@ -354,20 +373,50 @@ namespace CaroClient
                     double sendRemaining = 0;
                     if (lastSendTime != DateTime.MinValue)
                     {
-                        sendRemaining = ((double)sendTimeoutInput.Value - (DateTime.Now - lastSendTime).TotalMilliseconds) / 1000;
+                        sendRemaining = (TIMEOUT_MS - (DateTime.Now - lastSendTime).TotalMilliseconds) / 1000;
                     }
 
-                    sendCountdownLabel.Text = $"{Math.Max(0, sendRemaining):0.0}s";
+                    sendCountdownLabel.Text = $"Send: {Math.Max(0, sendRemaining):0.0}s";
                     sendCountdownLabel.ForeColor = sendRemaining < 5 ? Color.Red : Color.Green;
 
                     if (sendRemaining <= 0 && !sendTimeoutOccurred)
                     {
                         sendTimeoutOccurred = true;
-                        MessageBox.Show("Disconnected: No data sent to server (timeout).", "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        DisconnectFromServer();
+
+                        // Hiển thị MessageBox với các lựa chọn
+                        var result = MessageBox.Show("Time's up, you lost, do you want to play again?",
+                                                   "Timeout",
+                                                   MessageBoxButtons.YesNo,
+                                                   MessageBoxIcon.Warning);
+
+                        if (result == DialogResult.Yes)
+                        {
+                            // Disconnect first
+                            DisconnectFromServer();
+
+                            // Add small delay before reconnecting
+                            Task.Delay(1000).ContinueWith(t => {
+                                this.Invoke((MethodInvoker)delegate {
+                                    try
+                                    {
+                                        ConnectToServer();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        MessageBox.Show($"Unable to reconnect: {ex.Message}", "Error",
+                                                      MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                    }
+                                });
+                            });
+                        }
+                        else
+                        {
+                            DisconnectFromServer();
+                        }
                         return;
                     }
                 }
+
                 else
                 {
                     sendCountdownLabel.Text = "---";
@@ -401,8 +450,8 @@ namespace CaroClient
                 newClient.Connect(serverAddress, 8888);
 
                 // Set timeouts to prevent hanging
-                newClient.ReceiveTimeout = (int)(double)receiveTimeoutInput.Value;
-                newClient.SendTimeout = (int)(double)sendTimeoutInput.Value;
+                newClient.ReceiveTimeout = 60000;
+                newClient.SendTimeout = 60000;
 
                 SslStream newSslStream = new SslStream(newClient.GetStream(), false,
                                                      ValidateServerCertificate, null);
@@ -497,19 +546,20 @@ namespace CaroClient
             {
                 // Close connections safely
                 try { sslStream?.Close(); } catch { }
+                try { sslStream?.Dispose(); } catch { }
                 try { client?.Close(); } catch { }
+                try { client?.Dispose(); } catch { }
 
                 // Reset state only if form isn't disposed
                 if (!this.IsDisposed)
                 {
                     ResetClientState();
-                    receiveTimeoutOccurred = false; 
-                    sendTimeoutOccurred = false;    
+                    receiveTimeoutOccurred = false;
+                    sendTimeoutOccurred = false;
                     UpdateUIOnDisconnected();
                 }
             }
         }
-
         private void ResetClientState()
         {
             client = null;
@@ -549,7 +599,7 @@ namespace CaroClient
         }
         private void ListenForServerMessages()
         {
-            byte[] buffer = new byte[4096]; // Larger buffer
+            byte[] buffer = new byte[4096];
 
             try
             {
@@ -558,7 +608,13 @@ namespace CaroClient
                     try
                     {
                         int bytesRead = sslStream.Read(buffer, 0, buffer.Length);
-                        if (bytesRead == 0) break;
+                        if (bytesRead == 0)
+                        {
+                            // Graceful disconnect
+                            HandleDisconnection("Server closed the connection");
+                            break;
+                        }
+
                         lastReceiveTime = DateTime.Now;
                         string receivedData = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                         string[] messages = receivedData.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -572,27 +628,44 @@ namespace CaroClient
 
                             Console.WriteLine($"[Client {roomId}] Received: {command} | {data}");
 
-                            this.Invoke((MethodInvoker)delegate
+                            this.BeginInvoke((MethodInvoker)delegate
                             {
                                 if (!this.IsDisposed)
                                 {
-                                    ProcessServerMessage(command, data);
+                                    try
+                                    {
+                                        ProcessServerMessage(command, data);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"[Client {roomId}] Error processing message: {ex.Message}");
+                                    }
                                 }
                             });
                         }
                     }
-                    catch (IOException ex) when (ex.InnerException is SocketException)
+                    catch (IOException ex) when (ex.InnerException is SocketException socketEx)
                     {
-                        HandleDisconnection("Connection lost: " + ex.Message);
+                        HandleDisconnection($"Connection error: {socketEx.Message}");
+                        break;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        HandleDisconnection("Connection was disposed");
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        HandleDisconnection($"Error reading data: {ex.Message}");
                         break;
                     }
                 }
             }
-            catch (Exception ex)
+            finally
             {
                 if (!this.IsDisposed)
                 {
-                    HandleDisconnection(ex.Message);
+                    this.BeginInvoke((MethodInvoker)DisconnectFromServer);
                 }
             }
         }
@@ -623,9 +696,20 @@ namespace CaroClient
                         DisconnectFromServer();
                         break;
 
+                    case "STOP_SERVER":
+                        string disconnectMessage = string.IsNullOrEmpty(data) ? "Disconnected from server" : data;
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            MessageBox.Show(disconnectMessage, "Server Message",
+                                          MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            DisconnectFromServer();
+                        });
+                        break;
+
                     case "DISCONNECT":
                         DisconnectFromServer();
-                        
+
                         break;
 
                     case "ROLE":
@@ -679,8 +763,10 @@ namespace CaroClient
                         InitializeBoard();
                         lastMoveRow = -1;
                         lastMoveCol = -1;
-                        gameStatus = Common.GameStatus.Playing;
-                        isMyTurn = (playerRole == Common.CellState.X);
+                        gameStatus = Common.GameStatus.Waiting; // Chuyển sang trạng thái chờ
+                        isMyTurn = false;
+                        lastReceiveTime = DateTime.Now; // Bắt đầu đếm receive
+                        lastSendTime = DateTime.MinValue;
                         UpdateBoard(); MessageBox.Show(data, "Waiting for opponent", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         UpdateStatus(data); // Hiển thị thông báo trong status bar hoặc label
                         break;
@@ -710,16 +796,7 @@ namespace CaroClient
                 Console.WriteLine($"[Client {roomId}] Message processing error: {ex.Message}");
             }
         }
-        
 
-        private void ResetBoard()
-        {
-            InitializeBoard(); // Reset mảng board
-            UpdateBoard(); // Vẽ lại bàn cờ
-
-            // Cập nhật trạng thái
-            UpdateStatus("Đối thủ đã thoát. Đang chờ người chơi mới...");
-        }
 
         private void HandleDisconnection(string reason)
         {
@@ -729,6 +806,8 @@ namespace CaroClient
             {
                 if (client != null)
                 {
+                    MessageBox.Show($"Disconnected: {reason}", "Disconnect",
+                                  MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     UpdateStatus($"Disconnected: {reason}");
                     DisconnectFromServer();
                 }
